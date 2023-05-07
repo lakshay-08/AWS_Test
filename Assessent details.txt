@@ -1,0 +1,11 @@
+a.	What aspects of the assessment did you enjoy and believe that you did well in?
+      All in all was a good assessment I did well in first 3 questions.
+b.	What aspects of the assessment did you struggle with?
+      The cloudformation was new thing for me so had to do a little research about it.
+c.	What shortcuts did you take and in a production environment or with more time, what would you change or do differently?
+    - I refered online for cloudformation template
+    - I would definately add better logging in it and better naming convention.
+    - Also would create users for just viewing the the account and also a developer so that I do not have to use root all the time.
+    - Would also add multiple testcases for lambda for instance if dynamo is down or S3 has some issue and how to handle that.
+    - Would also consider cold start senerios according to the usecase so that in case there is a posibility how can we avoid a cold start.
+    - Would Test out the cloudformation template by deploying to other account.

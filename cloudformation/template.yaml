@@ -1,0 +1,186 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Example CloudFormation template'
+
+Parameters:
+  BucketName:
+    Type: String
+    Description: 'S3 Bucket for the customer database and lambda functions'
+    Default: 'customers-bucket-572023'
+  CustomerTableName:
+    Type: String
+    Description: 'Dynamo table containing details about customers'
+    Default: 'customer_database'
+  FirstLambdaFunctionName:
+    Type: String
+    Description: 'lambda function to check if a particular customer has password or not'
+    Default: 'check_customer'
+  SecondLambdaFunctionName:
+    Type: String
+    Description: 'Lambda function to update the password in dynamodb and create a file in s3'
+    Default: 'customer_update'
+  LambdaRole:  
+    Type: String
+    Description: 'Role with full access to S3 and Dynamodb '
+    Default: 'LambdaRole'
+
+Resources:
+  LambdaRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: 's3-dynamodb-full-access'
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:*'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'dynamodb:*'
+                Resource: '*'
+  # S3 bucket for storing text files
+  PhonePasswordBucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketName: !Ref customers-bucket-572023
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  # DynamoDB table for storing customer data
+  CustomerTable:
+    Type: 'AWS::DynamoDB::Table'
+    Properties:
+      TableName: !Ref customers-bucket-572023
+      AttributeDefinitions:
+        - AttributeName: phone_number
+          AttributeType: S
+      KeySchema:
+        - AttributeName: phone_number
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+
+  # First Lambda function to check if a customer exists
+  CheckCustomerFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: !Ref check_customer
+      Handler: index.lambda_handler
+      Runtime: python3.10
+      Code:
+        ZipFile: !Sub |
+          import json
+          import boto3
+          from datetime import datetime
+          dynamodb = boto3.resource('dynamodb')
+          table = dynamodb.Table('customer_database')
+          s3 = boto3.resource('s3')
+          bucket_name = 'customers-bucket-572023'
+
+          def lambda_handler(event, context):
+              phone_number = event['phone_number']
+              phone_password = event['phone_password']
+              
+              # Update the DynamoDB record with the phone password
+              response = table.get_item(Key={'phone_number': phone_number})
+              if 'Item' in response:
+                  item = response['Item']
+                  item['phone_password'] = phone_password
+                  
+                  # Create a text file in the S3 bucket
+                  file_name = f'{phone_number}_password.txt'
+                  file_contents = f'Phone password: {phone_password}'
+                  bucket = s3.Bucket(bucket_name)
+                  object = bucket.put_object(Key=file_name, Body=file_contents)
+                  
+                  # Update the DynamoDB record with the file details
+                  item['file_name'] = file_name
+                  item['file_size'] = object.content_length
+                  item['file_timestamp'] = str(datetime.now())
+                  
+                  table.put_item(Item=item)
+                  
+                  return {
+                      'statusCode': 200,
+                      'body': 'Successfully updated DynamoDB and created file in S3'
+                  }
+              else:
+                  return {
+                      'statusCode': 404,
+                      'body': 'Customer not found in DynamoDB'
+                  }
+      Timeout: 10
+      MemorySize: 128
+      Role: !GetAtt LambdaRole
+
+  # Second Lambda function to update a customer's phone password
+  UpdatePasswordFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: !Ref customer_update
+      Handler: index.lambda_handler
+      Runtime: python3.10
+      Code:
+        ZipFile: !Sub |
+        import json
+        import boto3
+        from datetime import datetime
+
+        dynamodb = boto3.resource('dynamodb')
+        table = dynamodb.Table('customer_database')
+        s3 = boto3.resource('s3')
+        bucket_name = 'customers-bucket-572023'
+
+        def lambda_handler(event, context):
+            phone_number = event['phone_number']
+            phone_password = event['phone_password']
+            
+            # Update the DynamoDB record with the phone password
+            response = table.get_item(Key={'phone_number': phone_number})
+            if 'Item' in response:
+                item = response['Item']
+                item['phone_password'] = phone_password
+                
+                # Create a text file in the S3 bucket
+                file_name = f'{phone_number}_password.txt'
+                file_contents = f'Phone password: {phone_password}'
+                bucket = s3.Bucket(bucket_name)
+                object = bucket.put_object(Key=file_name, Body=file_contents)
+                
+                # Update the DynamoDB record with the file details
+                item['file_name'] = file_name
+                item['file_size'] = object.content_length
+                item['file_timestamp'] = str(datetime.now())
+                
+                table.put_item(Item=item)
+                
+                return {
+                    'statusCode': 200,
+                    'body': 'Successfully updated DynamoDB and created file in S3'
+                }
+            else:
+                return {
+                    'statusCode': 404,
+                    'body': 'Customer not found in DynamoDB'
+                }
+      Timeout: 10
+      MemorySize: 128
+      Role: !GetAtt LambdaRole      
+
+                  
